@@ -159,6 +159,9 @@ venv.bak/
 __pycache__/
 *.pyc
 .pytest_cache/
+*.db
+*.sqlite3
+alembic/versions/__pycache__/
 
 # Spyder project settings
 .spyderproject
