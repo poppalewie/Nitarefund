@@ -11,3 +11,8 @@ class UserCreate(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+class ResetSchema(BaseModel):
+    email: str
+    security_answer: str
+    new_password: str
