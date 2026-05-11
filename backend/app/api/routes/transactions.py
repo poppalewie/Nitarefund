@@ -35,3 +35,15 @@ def confirm(tx_id: int,
             db: Session = Depends(get_db),
             current_user = Depends(get_current_user)):
     return transaction_service.confirm_payment(tx_id, current_user, db)
+
+@router.post("/{tx_id}/cancel")
+def cancel(tx_id: int,
+           db: Session = Depends(get_db),
+           current_user = Depends(get_current_user)):
+    return transaction_service.cancel_transaction(tx_id, current_user, db)
+
+@router.post("/{tx_id}/dispute")
+def dispute(tx_id: int,
+            db: Session = Depends(get_db),
+            current_user = Depends(get_current_user)):
+    return transaction_service.dispute_transaction(tx_id, current_user, db)

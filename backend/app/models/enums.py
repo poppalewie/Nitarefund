@@ -10,3 +10,6 @@ class TransactionStatus(str, enum.Enum):
     awaiting_confirmation = "awaiting_confirmation"
     settled = "settled"
     rejected = "rejected"
+    auto_settled = "auto_settled"
+    cancelled = "cancelled"
+    disputed = "disputed"
