@@ -72,7 +72,7 @@ def mark_as_paid(tx_id: int, current_user, db: Session):
 
     wallet_balance = get_balance(current_user.id, db)
 
-    #AUTO-SETTLE PATH
+    # 🔥 AUTO-SETTLE (TRUSTED PATH)
     if wallet_balance >= THRESHOLD and wallet_balance >= float(tx.amount):
         deduct(current_user.id, float(tx.amount), db)
 
@@ -81,6 +81,7 @@ def mark_as_paid(tx_id: int, current_user, db: Session):
 
         db.commit()
 
+        # ✅ Trust update allowed (system guarantees payment)
         apply_event(
             a_id=tx.lender_id,
             b_id=tx.borrower_id,
@@ -88,23 +89,13 @@ def mark_as_paid(tx_id: int, current_user, db: Session):
             db=db
         )
 
-        # future: trigger notification
         return tx
 
-    #NORMAL FLOW
+    # 🔁 NORMAL FLOW (UNVERIFIED)
     tx.status = TransactionStatus.awaiting_confirmation
     db.commit()
 
-    tx.status = TransactionStatus.approved
-    db.commit()
-
-    apply_event(
-        a_id=tx.lender_id,
-        b_id=tx.borrower_id,
-        event="pay",
-        db=db
-    )
-
+    # ❌ NO trust update here
     return tx
 
 
@@ -125,6 +116,7 @@ def confirm_payment(tx_id: int, current_user, db: Session):
 
     db.commit()
 
+    # ✅ TRUST happens HERE
     apply_event(
         a_id=tx.lender_id,
         b_id=tx.borrower_id,
@@ -132,9 +124,7 @@ def confirm_payment(tx_id: int, current_user, db: Session):
         db=db
     )
 
-
     return tx
-
 def cancel_transaction(tx_id: int, current_user, db: Session):
     tx = db.query(Transaction).filter(Transaction.id == tx_id).first()
 

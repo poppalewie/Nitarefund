@@ -10,9 +10,9 @@ BASE_SCORE = 50
 # Event weights (tune later)
 WEIGHTS = {
     "approve": 2,
-    "pay": 5,
+    "pay": 0,
     "auto_settle": 10,
-    "settle": 8,
+    "settle": 12,
     "dispute": -4,
     "cancel": -2,  # mild penalty to lender
 }
