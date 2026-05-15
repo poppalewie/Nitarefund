@@ -102,3 +102,26 @@ def create_group(user_ids: list, total_amount: float, description="") -> dict:
                                 "description": description})
     r.raise_for_status()
     return r.json()
+
+def get_my_transactions(limit=10) -> list:
+    r = get(f"/transactions/?limit={limit}")
+    r.raise_for_status()
+    return r.json()
+
+
+def get_summary() -> dict:
+    r = get("/transactions/summary")
+    r.raise_for_status()
+    return r.json()
+
+
+def get_wallet_balance() -> float:
+    r = get("/wallet/balance")
+    r.raise_for_status()
+    return r.json().get("balance", 0.0)
+
+
+def list_users() -> list:
+    r = get("/users/")
+    r.raise_for_status()
+    return r.json()
