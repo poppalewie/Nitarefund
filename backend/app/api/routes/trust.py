@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.db.deps import get_db
 from app.api.deps import get_current_user
 from app.services import trust_query_service
+from app.models import TrustScore, Transaction
+from app.models.enums import TransactionStatus
 
 router = APIRouter(prefix="/trust", tags=["trust"])
 
@@ -22,11 +25,7 @@ def pair_trust(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    return trust_query_service.get_pair_trust(
-        current_user.id,
-        user_id,
-        db
-    )
+    return trust_query_service.get_pair_trust(current_user.id, user_id, db)
 
 
 @router.get("/leaderboard")
@@ -36,20 +35,13 @@ def get_leaderboard(
 ):
     return trust_query_service.leaderboard(db, limit=limit)
 
+
 @router.get("/me/history")
 def trust_history(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """
-    Returns daily average incoming trust score over time,
-    derived from when trust scores were last updated.
-    We approximate by looking at settled transaction dates.
-    """
-    from sqlalchemy import func, desc
-    from app.models import Transaction, TransactionStatus
-
-    settled = ["settled", "auto_settled"]
+    settled = [TransactionStatus.settled, TransactionStatus.auto_settled]
 
     rows = (
         db.query(
@@ -66,28 +58,23 @@ def trust_history(
         .all()
     )
 
-    # Get current score
-    avg = db.query(
+    current_score = db.query(
         func.coalesce(func.avg(TrustScore.score), 50.0)
     ).filter(TrustScore.user_b_id == current_user.id).scalar()
+    current_score = round(float(current_score), 1)
 
-    current_score = round(float(avg), 1)
-
-    # Build a simple trend: start at 50, move toward current score
-    # weighted by transaction count at each date
     history = []
     running = 50.0
     total_txns = sum(r.count for r in rows) or 1
 
     for row in rows:
-        weight = row.count / total_txns
+        weight  = row.count / total_txns
         running = running + (current_score - running) * weight
         history.append({
             "date":  str(row.date),
             "score": round(running, 1),
         })
 
-    # Always include current score as last point
     if history:
         history[-1]["score"] = current_score
     else:

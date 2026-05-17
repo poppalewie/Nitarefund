@@ -1,74 +1,44 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, union
 from app.models import TrustScore, User, Transaction
 
 
-def get_pair_trust(a_id: int, b_id: int, db: Session):
-    return (
-        db.query(TrustScore)
-        .filter(
-            TrustScore.user_a_id == a_id,
-            TrustScore.user_b_id == b_id
-        )
-        .first()
-    )
-
-
-def leaderboard(db: Session, limit: int = 10):
-    from sqlalchemy import func, or_
-    from app.models import Transaction
-
-    # Count transactions per user (as lender or borrower)
-    as_lender = (
-        db.query(Transaction.lender_id.label("uid"), func.count().label("cnt"))
-        .group_by(Transaction.lender_id)
-    )
-    as_borrower = (
-        db.query(Transaction.borrower_id.label("uid"), func.count().label("cnt"))
-        .group_by(Transaction.borrower_id)
-    )
-    from sqlalchemy import union_all
-    combined = union_all(as_lender, as_borrower).subquery()
-    tx_totals = (
-        db.query(combined.c.uid, func.sum(combined.c.cnt).label("total"))
-        .group_by(combined.c.uid)
-        .subquery()
-    )
-
-    results = (
-        db.query(
-            User.id,
-            User.username,
-            func.coalesce(func.avg(TrustScore.score), 50.0).label("avg_score"),
-            func.coalesce(tx_totals.c.total, 0).label("tx_count"),
-        )
-        .outerjoin(TrustScore, TrustScore.user_b_id == User.id)
-        .outerjoin(tx_totals, tx_totals.c.uid == User.id)
-        .group_by(User.id, User.username, tx_totals.c.total)
-        .order_by(func.coalesce(func.avg(TrustScore.score), 50.0).desc())
-        .limit(limit)
-        .all()
-    )
-
-    return [
-        {
-            "user_id":           r.id,
-            "username":          r.username,
-            "score":             round(float(r.avg_score), 1),
-            "transaction_count": int(r.tx_count),
-        }
-        for r in results
-    ]
-
-
-def get_my_network(user_id: int, db: Session):
+def get_pair_trust(a_id: int, b_id: int, db: Session) -> dict:
     """
-    Every peer the user has ever transacted with,
-    plus their pairwise trust score (outgoing: how I rated them).
-    Falls back to 50 if no score exists yet.
+    Returns the mutual average trust score between two users.
+    Checks both directions and averages them.
+    Falls back to 50 if no relationship exists yet.
     """
-    from sqlalchemy import or_, union, func
-    from app.models import Transaction
+    # How a rates b (outgoing from a)
+    ts_ab = db.query(TrustScore).filter(
+        TrustScore.user_a_id == a_id,
+        TrustScore.user_b_id == b_id
+    ).first()
+
+    # How b rates a (incoming to a)
+    ts_ba = db.query(TrustScore).filter(
+        TrustScore.user_a_id == b_id,
+        TrustScore.user_b_id == a_id
+    ).first()
+
+    scores = []
+    if ts_ab: scores.append(float(ts_ab.score))
+    if ts_ba: scores.append(float(ts_ba.score))
+
+    if not scores:
+        return {"score": 50.0, "user_a_id": a_id, "user_b_id": b_id}
+
+    avg = sum(scores) / len(scores)
+    return {"score": round(avg, 1), "user_a_id": a_id, "user_b_id": b_id}
+
+
+def get_my_network(user_id: int, db: Session) -> list:
+    """
+    Every peer the user has transacted with, showing how THEY rate the
+    current user (incoming scores). This matches the leaderboard direction.
+    Falls back to 50 if no score exists yet for that pair.
+    """
+    settled = ["settled", "auto_settled"]
 
     # Collect all unique peer IDs from transactions
     as_lender   = db.query(Transaction.borrower_id.label("peer_id")).filter(
@@ -88,8 +58,8 @@ def get_my_network(user_id: int, db: Session):
         .join(User, User.id == peer_ids.c.peer_id)
         .outerjoin(
             TrustScore,
-            (TrustScore.user_a_id == user_id) &
-            (TrustScore.user_b_id == User.id)
+            (TrustScore.user_a_id == User.id) &    # peer is the rater
+            (TrustScore.user_b_id == user_id)       # current user is rated
         )
         .distinct()
         .order_by(func.coalesce(TrustScore.score, 50.0).desc())
@@ -101,6 +71,51 @@ def get_my_network(user_id: int, db: Session):
             "user_id":  r.id,
             "username": r.username,
             "score":    round(float(r.score), 1),
+        }
+        for r in results
+    ]
+
+
+def leaderboard(db: Session, limit: int = 10) -> list:
+    """
+    Global trust score = average of all INCOMING scores (how others rate you).
+    e.g. if A→you=80 and C→you=60, your global score = 70.
+    Users with no incoming scores default to 50.
+    """
+    from sqlalchemy import func as f, union_all
+    from app.models import Transaction
+
+    # Transaction count per user
+    as_lender   = db.query(Transaction.lender_id.label("uid"),   func.count().label("cnt")).group_by(Transaction.lender_id)
+    as_borrower = db.query(Transaction.borrower_id.label("uid"), func.count().label("cnt")).group_by(Transaction.borrower_id)
+    combined    = union_all(as_lender, as_borrower).subquery()
+    tx_totals   = (
+        db.query(combined.c.uid, func.sum(combined.c.cnt).label("total"))
+        .group_by(combined.c.uid)
+        .subquery()
+    )
+
+    results = (
+        db.query(
+            User.id,
+            User.username,
+            func.coalesce(func.avg(TrustScore.score), 50.0).label("avg_score"),
+            func.coalesce(tx_totals.c.total, 0).label("tx_count"),
+        )
+        .outerjoin(TrustScore, TrustScore.user_b_id == User.id)
+        .outerjoin(tx_totals,  tx_totals.c.uid == User.id)
+        .group_by(User.id, User.username, tx_totals.c.total)
+        .order_by(func.coalesce(func.avg(TrustScore.score), 50.0).desc())
+        .limit(limit)
+        .all()
+    )
+
+    return [
+        {
+            "user_id":           r.id,
+            "username":          r.username,
+            "score":             round(float(r.avg_score), 1),
+            "transaction_count": int(r.tx_count),
         }
         for r in results
     ]

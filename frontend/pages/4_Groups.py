@@ -13,6 +13,9 @@ page_setup("NitaRefund · Groups")
 require_auth()
 sidebar_nav("Groups")
 
+if "grp_form_version" not in st.session_state:
+    st.session_state.grp_form_version = 0
+
 username = st.session_state.get("username", "User")
 
 
@@ -32,30 +35,23 @@ create_tab, history_tab = st.tabs(["New Split", "My Groups"])
 # TAB 1 — Create
 # ═══════════════════════════════════════════════════
 with create_tab:
-    st.markdown(f"""
-    <div style="font-size:13px;color:{TEXT_MUTED};margin:1rem 0 1.5rem;">
-      You are the organiser. The total is split equally between you and
-      every peer you add. Peers will receive a pending transaction they
-      need to approve.
-    </div>
-    """, unsafe_allow_html=True)
+    v = st.session_state.grp_form_version
 
     ga, gb = st.columns(2)
     with ga:
         user_ids_input = st.text_input(
             "Peer User IDs (comma separated)",
-            key="grp_ids",
-            placeholder="e.g. 2, 5, 8"
+            key=f"grp_ids_{v}", placeholder="e.g. 2, 5, 8"
         )
         description = st.text_input(
-            "Description",
-            key="grp_desc",
+            "Description", key=f"grp_desc_{v}",
             placeholder="e.g. Dinner at Java, Uber split"
         )
     with gb:
         total_amount = st.number_input(
-            "Total Amount (KES)",
-            min_value=1.0, step=100.0, key="grp_amount"
+            "Total Amount (KES)", min_value=1,
+            step=100, value=1000, format="%d",
+            key=f"grp_amount_{v}"
         )
 
         # Live split preview
@@ -86,10 +82,9 @@ with create_tab:
             except ValueError:
                 pass
 
-    if st.button("Create Group Split", key="btn_create_group"):
+    if st.button("Create Group Split", key=f"btn_create_group_{v}"):
         try:
-            ids = [int(x.strip()) for x in user_ids_input.split(",")
-                   if x.strip()]
+            ids = [int(x.strip()) for x in user_ids_input.split(",") if x.strip()]
             if not ids:
                 st.error("Enter at least one peer User ID.")
             else:
@@ -100,17 +95,20 @@ with create_tab:
                 )
                 total_ppl = len(ids) + 1
                 st.success(
-                    f"Group #{result['group_id']} created — "
-                    f"{fmt(result['share'])} each across {total_ppl} people."
+                    f"✓ Group split created — "
+                    f"{fmt(float(total_amount) / total_ppl)} each across {total_ppl} people."
                 )
+                st.session_state.grp_form_version += 1
                 st.cache_data.clear()
                 st.rerun()
         except ValueError:
             st.error("User IDs must be numbers separated by commas.")
         except Exception as e:
-            msg = getattr(getattr(e, "response", None), "json", lambda: {})()
+            try:
+                msg = e.response.json() if hasattr(e, "response") and e.response else {}
+            except Exception:
+                msg = {}
             st.error(msg.get("detail", "Could not create group split."))
-
 
 # ═══════════════════════════════════════════════════
 # TAB 2 — History

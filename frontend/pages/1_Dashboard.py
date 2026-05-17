@@ -29,10 +29,13 @@ def load_dashboard(token):
     except: network = []
     try:    balance = api.get_wallet_balance()
     except: balance = 0.0
-    return summary, txns, network, balance
+    try:    me      = api.get_me()
+    except: me      = {}
+    return summary, txns, network, balance, me
 
-summary, txns, network, balance = load_dashboard(st.session_state.token)
-is_new = summary["total_count"] == 0
+summary, txns, network, balance, me = load_dashboard(st.session_state.token)
+is_new  = summary["total_count"] == 0
+user_id = me.get("id")
 
 # ── Header ────────────────────────────────────────────────────
 greeting = "Welcome to NitaRefund" if is_new else f"Welcome back, {username}"
@@ -56,15 +59,7 @@ with c5: stat_card("Total Transactions", str(summary["total_count"]))
 divider()
 
 # ── User ID card ──────────────────────────────────────────────
-user_id_hint = None
-if txns:
-    for tx in txns:
-        if tx.get("lender_username") == username:
-            user_id_hint = tx["lender_id"]; break
-        elif tx.get("borrower_username") == username:
-            user_id_hint = tx["borrower_id"]; break
-
-if user_id_hint:
+if user_id:
     st.markdown(f"""
     <div style="background:rgba(233,196,106,0.06);border:1px solid rgba(233,196,106,0.20);
                 border-radius:12px;padding:14px 20px;margin-bottom:1.5rem;
@@ -74,13 +69,14 @@ if user_id_hint:
         <div style="font-size:11px;color:{TEXT_MUTED};text-transform:uppercase;
                     letter-spacing:0.06em;margin-bottom:3px;">Your User ID</div>
         <div style="font-size:28px;font-family:'DM Serif Display',Georgia,serif;
-                    color:{GOLD};">{user_id_hint}</div>
+                    color:{GOLD};">{user_id}</div>
         <div style="font-size:12px;color:{TEXT_MUTED};margin-top:2px;">
           Share this with peers so they can include you in transactions
         </div>
       </div>
     </div>
     """, unsafe_allow_html=True)
+
 
 # ── Main layout ───────────────────────────────────────────────
 left_col, right_col = st.columns([6, 4], gap="large")

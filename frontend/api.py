@@ -80,7 +80,7 @@ def create_transaction(borrower_id, amount, tx_type="monetary",
 
 
 def transaction_action(tx_id: int, action: str) -> dict:
-    # action is one of: approve, pay, confirm, cancel, dispute
+    # action: approve, pay, confirm, cancel, dispute, reject
     r = post(f"/transactions/{tx_id}/{action}")
     r.raise_for_status()
     return r.json()
@@ -133,5 +133,10 @@ def get_trust_history() -> list:
 
 def get_my_groups() -> list:
     r = get("/groups/")
+    r.raise_for_status()
+    return r.json()
+
+def get_me() -> dict:
+    r = get("/auth/me")
     r.raise_for_status()
     return r.json()

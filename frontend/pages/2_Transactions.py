@@ -12,6 +12,8 @@ import api
 page_setup("NitaRefund · Transactions")
 require_auth()
 sidebar_nav("Transactions")
+if "form_version" not in st.session_state:
+    st.session_state.form_version = 0
 # Persist active tab across reruns
 if "tx_tab" not in st.session_state:
     st.session_state.tx_tab = 0
@@ -49,11 +51,13 @@ def action_button(label, action, tx_id, style="primary"):
         try:
             api.transaction_action(tx_id, action)
             st.cache_data.clear()
-            st.success(f"Done — transaction updated.")
             st.rerun()
         except Exception as e:
-            msg = getattr(getattr(e, "response", None), "json", lambda: {})()
-            st.error(msg.get("detail", f"Action failed."))
+            try:
+                msg = e.response.json() if hasattr(e, "response") and e.response else {}
+            except Exception:
+                msg = {}
+            st.error(msg.get("detail", "Action failed — check the server logs."))
 
     if style in ("danger", "ghost"):
         st.markdown('</div>', unsafe_allow_html=True)
@@ -212,20 +216,35 @@ with new_tab:
     </div>
     """, unsafe_allow_html=True)
 
+    # form_version changes key names → widgets reset after submission
+    v = st.session_state.form_version
+
     na, nb = st.columns(2)
     with na:
-        borrower_id = st.number_input("Borrower User ID", min_value=1,
-                                      step=1, key="nt_borrower")
-        amount      = st.number_input("Amount (KES)", min_value=1.0,
-                                      step=100.0, key="nt_amount")
+        borrower_id = st.number_input(
+            "Borrower User ID",
+            min_value=1, step=1, value=1,
+            key=f"nt_borrower_{v}"
+        )
+        amount = st.number_input(
+            "Amount (KES)",
+            min_value=1, step=100, value=1000,
+            format="%d",
+            key=f"nt_amount_{v}"
+        )
     with nb:
-        tx_type  = st.selectbox("Type", ["monetary", "service"], key="nt_type")
-        due_date = st.date_input("Due Date (optional)", value=None, key="nt_due")
+        tx_type  = st.selectbox("Type", ["monetary", "service"],
+                                key=f"nt_type_{v}")
+        due_date = st.date_input("Due Date (optional)", value=None,
+                                 key=f"nt_due_{v}")
 
-    description = st.text_input("Description (optional)", key="nt_desc",
-                                placeholder="e.g. lunch money, rent split")
+    description = st.text_input(
+        "Description (optional)",
+        key=f"nt_desc_{v}",
+        placeholder="e.g. lunch money, rent split, fare"
+    )
 
-    if st.button("Create Transaction", key="btn_create_tx"):
+    if st.button("Create Transaction", key=f"btn_create_{v}"):
         try:
             api.create_transaction(
                 borrower_id=int(borrower_id),
@@ -234,13 +253,13 @@ with new_tab:
                 description=description,
                 due_date=due_date if due_date else None,
             )
-            st.success("Transaction created. The borrower needs to approve it.")
+            st.success(f"✓ Transaction created for {fmt(float(amount))}. The borrower needs to approve it.")
+            st.session_state.form_version += 1   # resets all form fields
             st.cache_data.clear()
             st.rerun()
         except Exception as e:
             msg = getattr(getattr(e, "response", None), "json", lambda: {})()
             st.error(msg.get("detail", "Could not create transaction."))
-
 
 # ═══════════════════════════════════════════════════
 # TAB 3 — Pending Actions
@@ -293,7 +312,7 @@ with pending_tab:
             # Context label
             if is_lender and status == "awaiting_confirmation":
                 context = f"Owed to you from {counterparty}"
-                note    = "⏳ Borrower has marked this as settled. Confirm or reject below."
+                note    = "⏳ Borrower has marked this as settled.  Confirm if received, or reject to send back for retry."
                 note_color = WARNING
             elif not is_lender and status == "pending":
                 context = f"Requested by {counterparty}"
@@ -340,7 +359,7 @@ with pending_tab:
             if is_lender and status == "awaiting_confirmation":
                 b1, b2, _ = st.columns([2, 2, 3])
                 with b1: action_button(f"✅ Confirm Receipt #{tx['id']}", "confirm", tx["id"])
-                with b2: action_button(f"✗ Reject #{tx['id']}", "cancel", tx["id"], style="danger")
+                with b2: action_button(f"✗ Reject #{tx['id']}", "reject", tx["id"], style="danger")
 
             elif not is_lender and status == "pending":
                 b1, b2, _ = st.columns([2, 2, 3])

@@ -4,7 +4,7 @@ from datetime import datetime
 from config import (
     page_setup, require_auth, page_title, divider, sidebar_nav,
     trust_badge, trust_ring_svg, trust_color, PLOTLY_LAYOUT,
-    GOLD, BG_SURFACE, BG_RAISED, BORDER,
+    GOLD, BG_SURFACE, BG_BASE, BG_RAISED, BORDER,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
     SUCCESS, DANGER, WARNING, INFO,
 )
@@ -166,7 +166,7 @@ if len(history) > 1:
         height=240,
         yaxis=dict(range=[0, 100], gridcolor=BG_RAISED,
                    zerolinecolor=BG_RAISED, ticksuffix="  "),
-        xaxis=dict(gridcolor="transparent"),
+        xaxis=dict(gridcolor="rgba(0,0,0,0)"),
         margin=dict(l=10, r=60, t=10, b=30),
     )
     fig.update_layout(**layout)

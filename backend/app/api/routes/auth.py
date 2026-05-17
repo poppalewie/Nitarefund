@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.db.deps import get_db
+from app.api.deps import get_current_user
 from app.models import User
 from app.core.security import hash_password, verify_password
 from app.schemas.auth import UserCreate, Token, ResetSchema
@@ -44,3 +45,11 @@ def reset_password(
     db.commit()
 
     return {"message": "Password reset successful"}
+
+@router.get("/me")
+def me(current_user = Depends(get_current_user)):
+    return {
+        "id":       current_user.id,
+        "username": current_user.username,
+        "email":    current_user.email,
+    }

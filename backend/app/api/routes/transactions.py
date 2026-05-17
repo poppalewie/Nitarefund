@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, desc
 
 from app.db.deps import get_db
 from app.api.deps import get_current_user
@@ -11,62 +12,12 @@ from app.models.enums import TransactionStatus
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 
-@router.get("/", response_model=list[TransactionOut])
-def get_my_transactions(
-    limit: int = Query(default=10, le=50),
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    """All transactions where the user is lender or borrower, newest first."""
-    from sqlalchemy import or_, desc
-
-    rows = (
-        db.query(Transaction)
-        .filter(
-            or_(
-                Transaction.lender_id == current_user.id,
-                Transaction.borrower_id == current_user.id,
-            )
-        )
-        .order_by(desc(Transaction.created_at))
-        .limit(limit)
-        .all()
-    )
-
-    # Resolve usernames in one pass
-    user_ids = {r.lender_id for r in rows} | {r.borrower_id for r in rows}
-    users = {u.id: u.username for u in db.query(User).filter(User.id.in_(user_ids)).all()}
-
-    result = []
-    for tx in rows:
-        out = TransactionOut(
-            id=tx.id,
-            lender_id=tx.lender_id,
-            borrower_id=tx.borrower_id,
-            lender_username=users.get(tx.lender_id),
-            borrower_username=users.get(tx.borrower_id),
-            amount=float(tx.amount),
-            transaction_type=tx.transaction_type.value,
-            description=tx.description,
-            status=tx.status.value,
-            due_date=tx.due_date,
-            settled_at=tx.settled_at,
-            created_at=tx.created_at,
-        )
-        result.append(out)
-
-    return result
-
-
 @router.get("/summary")
 def get_summary(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Aggregated stats for the dashboard stat cards."""
-    from sqlalchemy import func, or_
-
-    uid = current_user.id
+    uid     = current_user.id
     settled = [TransactionStatus.settled, TransactionStatus.auto_settled]
 
     total_lent = db.query(func.sum(Transaction.amount)).filter(
@@ -99,34 +50,107 @@ def get_summary(
         "total_count":    int(total_count),
     }
 
+
+@router.get("/", response_model=list[TransactionOut])
+def get_my_transactions(
+    limit: int = Query(default=50, le=100),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    rows = (
+        db.query(Transaction)
+        .filter(
+            or_(
+                Transaction.lender_id == current_user.id,
+                Transaction.borrower_id == current_user.id,
+            )
+        )
+        .order_by(desc(Transaction.created_at))
+        .limit(limit)
+        .all()
+    )
+
+    user_ids = {r.lender_id for r in rows} | {r.borrower_id for r in rows}
+    users    = {
+        u.id: u.username
+        for u in db.query(User).filter(User.id.in_(user_ids)).all()
+    }
+
+    return [
+        TransactionOut(
+            id=tx.id,
+            lender_id=tx.lender_id,
+            borrower_id=tx.borrower_id,
+            lender_username=users.get(tx.lender_id),
+            borrower_username=users.get(tx.borrower_id),
+            amount=float(tx.amount),
+            transaction_type=tx.transaction_type.value,
+            description=tx.description,
+            status=tx.status.value,
+            due_date=tx.due_date,
+            settled_at=tx.settled_at,
+            created_at=tx.created_at,
+        )
+        for tx in rows
+    ]
+
+
+@router.post("/", response_model=TransactionOut)
+def create(
+    data: TransactionCreate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    return transaction_service.create_transaction(current_user, data, db)
+
+
 @router.post("/{tx_id}/approve")
-def approve(tx_id: int,
-            db: Session = Depends(get_db),
+def approve(tx_id: int, db: Session = Depends(get_db),
             current_user = Depends(get_current_user)):
     return transaction_service.approve_transaction(tx_id, current_user, db)
 
+@router.post("/{tx_id}/reject")
+def reject(tx_id: int, db: Session = Depends(get_db),
+           current_user = Depends(get_current_user)):
+    """
+    Lender hasn't received the payment — sends it back to pending.
+    No trust penalty. Borrower can retry once the payment is actually made.
+    """
+    tx = db.query(Transaction).filter(Transaction.id == tx_id).first()
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if tx.lender_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the lender can reject a payment claim")
+    if tx.status != TransactionStatus.awaiting_confirmation:
+        raise HTTPException(status_code=400, detail="Can only reject payments awaiting confirmation")
+
+    # Back to pending — borrower sees it and can re-approve and re-pay
+    tx.status = TransactionStatus.pending
+    db.commit()
+    return tx
+
 
 @router.post("/{tx_id}/pay")
-def pay(tx_id: int,
-        db: Session = Depends(get_db),
+def pay(tx_id: int, db: Session = Depends(get_db),
         current_user = Depends(get_current_user)):
     return transaction_service.mark_as_paid(tx_id, current_user, db)
 
 
 @router.post("/{tx_id}/confirm")
-def confirm(tx_id: int,
-            db: Session = Depends(get_db),
+def confirm(tx_id: int, db: Session = Depends(get_db),
             current_user = Depends(get_current_user)):
     return transaction_service.confirm_payment(tx_id, current_user, db)
 
+
+
+
 @router.post("/{tx_id}/cancel")
-def cancel(tx_id: int,
-           db: Session = Depends(get_db),
+def cancel(tx_id: int, db: Session = Depends(get_db),
            current_user = Depends(get_current_user)):
     return transaction_service.cancel_transaction(tx_id, current_user, db)
 
+
 @router.post("/{tx_id}/dispute")
-def dispute(tx_id: int,
-            db: Session = Depends(get_db),
+def dispute(tx_id: int, db: Session = Depends(get_db),
             current_user = Depends(get_current_user)):
     return transaction_service.dispute_transaction(tx_id, current_user, db)

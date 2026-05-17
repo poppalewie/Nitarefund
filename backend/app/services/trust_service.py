@@ -7,16 +7,15 @@ MIN_SCORE = 0
 MAX_SCORE = 100
 BASE_SCORE = 50
 
-# Event weights (tune later)
 WEIGHTS = {
-    "approve": 2,
-    "pay": 0,
-    "auto_settle": 10,
-    "settle": 12,
-    "dispute": -4,
-    "cancel": -2,  # mild penalty to lender
+    "approve":          2,
+    "pay":              0,
+    "auto_settle":     10,
+    "settle":          12,
+    "dispute":         -4,   # lender's trust of borrower drops
+    "dispute_counter": -3,   # borrower's trust of lender drops (mutual cost)
+    "cancel":          -2,
 }
-
 
 def _clamp(value: float) -> float:
     return max(MIN_SCORE, min(MAX_SCORE, value))
