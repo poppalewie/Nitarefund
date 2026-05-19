@@ -94,6 +94,19 @@ def get_my_network() -> list:
     return r.json()
 
 
+# ADD THIS BELOW ↓
+def get_pair_trust(user_id: int) -> dict:
+    r = get(f"/trust/pair/{user_id}")
+    r.raise_for_status()
+    return r.json()
+
+
+def get_trust_history() -> list:
+    r = get("/trust/me/history")
+    r.raise_for_status()
+    return r.json()
+
+
 # ── Groups ────────────────────────────────────────────────────
 
 def create_group(user_ids: list, total_amount: float, description="") -> dict:
@@ -138,5 +151,16 @@ def get_my_groups() -> list:
 
 def get_me() -> dict:
     r = get("/auth/me")
+    r.raise_for_status()
+    return r.json()
+
+def get_wallet_leaderboard() -> list:
+    r = get("/wallet/leaderboard")
+    r.raise_for_status()
+    return r.json()
+
+
+def get_spending_categories() -> list:
+    r = get("/wallet/categories")
     r.raise_for_status()
     return r.json()

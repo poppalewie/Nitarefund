@@ -355,6 +355,7 @@ def sidebar_nav(active=""):
             ("Transactions", "pages/2_Transactions.py"),
             ("Trust",        "pages/3_Trust.py"),
             ("Groups",       "pages/4_Groups.py"),
+            ("Analytics",    "pages/6_Analytics.py"),
             ("Profile",      "pages/5_Profile.py"),
         ]
 

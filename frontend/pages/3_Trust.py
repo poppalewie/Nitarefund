@@ -1,10 +1,13 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import streamlit as st
 import plotly.graph_objects as go
 from datetime import datetime
 from config import (
     page_setup, require_auth, page_title, divider, sidebar_nav,
     trust_badge, trust_ring_svg, trust_color, PLOTLY_LAYOUT,
-    GOLD, BG_SURFACE, BG_BASE, BG_RAISED, BORDER,
+    GOLD, BG_BASE, BG_SURFACE, BG_RAISED, BORDER,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
     SUCCESS, DANGER, WARNING, INFO,
 )
@@ -85,43 +88,63 @@ with hero_m:
 with hero_r:
     st.markdown(f"""
     <div style="background:{BG_SURFACE};border:1px solid {BORDER};
-                border-radius:16px;padding:20px 22px;height:100%;">
+                border-radius:16px;padding:20px 22px;">
       <div style="font-family:'DM Serif Display',Georgia,serif;
-                  font-size:16px;color:{TEXT_PRIMARY};margin-bottom:16px;">
+                  font-size:16px;color:{TEXT_PRIMARY};margin-bottom:6px;">
         Check Pair Trust
       </div>
       <div style="font-size:13px;color:{TEXT_MUTED};margin-bottom:14px;">
-        Enter any peer's User ID to see your pairwise score.
+        Enter any peer's User ID to see your mutual trust score.
       </div>
+    </div>
     """, unsafe_allow_html=True)
 
-    peer_id = st.number_input("Peer User ID", min_value=1, step=1,
-                               key="pair_id", label_visibility="collapsed")
+    peer_id_input = st.text_input(
+        "Peer User ID",
+        placeholder="e.g. 3",
+        key="pair_id_input",
+        label_visibility="collapsed"
+    )
 
     if st.button("Check Score", key="btn_pair"):
-        try:
-            result = api.get_pair_trust(int(peer_id))
-            score  = float(result.get("score", 50))
-            color  = trust_color(score)
-            label  = "Excellent" if score >= 70 else "Good" if score >= 50 else "Fair" if score >= 25 else "Poor"
-            st.markdown(f"""
-            <div style="background:rgba(233,196,106,0.05);
-                        border:1px solid rgba(233,196,106,0.15);
-                        border-radius:10px;padding:14px;text-align:center;
-                        margin-top:10px;">
-              <div style="font-size:11px;color:{TEXT_MUTED};
+        if not peer_id_input.strip():
+            st.warning("Enter a User ID first.")
+        else:
+            try:
+                pid    = int(peer_id_input.strip())
+                result = api.get_pair_trust(pid)
+                score  = float(result.get("score", 50))
+                color  = trust_color(score)
+                label  = ("Excellent" if score >= 70 else
+                          "Good"      if score >= 50 else
+                          "Fair"      if score >= 25 else "Poor")
+                st.markdown(f"""
+                <div style="background:rgba(233,196,106,0.05);
+                            border:1px solid rgba(233,196,106,0.15);
+                            border-radius:10px;padding:16px;text-align:center;
+                            margin-top:10px;">
+                  <div style="font-size:11px;color:{TEXT_MUTED};
                           text-transform:uppercase;letter-spacing:0.06em;
-                          margin-bottom:6px;">Score with User {int(peer_id)}</div>
-              <div style="font-size:40px;font-family:'DM Serif Display',Georgia,serif;
+                          margin-bottom:6px;">Mutual score with User {pid}</div>
+                  <div style="font-size:44px;
+                          font-family:'DM Serif Display',Georgia,serif;
                           color:{color};line-height:1;">{round(score)}</div>
-              <div style="font-size:12px;color:{color};margin-top:4px;">{label}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        except Exception:
-            st.error("No trust record found for that User ID.")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
+                  <div style="font-size:12px;color:{color};margin-top:6px;">
+                    {label}
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+            except ValueError:
+                st.error("User ID must be a number.")
+            except Exception as e:
+                try:
+                    detail = e.response.json().get("detail", "")
+                except Exception:
+                    detail = ""
+                if detail:
+                    st.warning(detail)
+                else:
+                    st.error("Could not fetch score. Check your connection.")
 divider()
 
 # ── Trust trend chart ─────────────────────────────────────────

@@ -5,17 +5,33 @@ from app.models import TrustScore, User, Transaction
 
 def get_pair_trust(a_id: int, b_id: int, db: Session) -> dict:
     """
-    Returns the mutual average trust score between two users.
-    Checks both directions and averages them.
-    Falls back to 50 if no relationship exists yet.
+    Returns the mutual trust score between two users.
+    Raises 404 if they have never transacted — prevents random lookups.
     """
-    # How a rates b (outgoing from a)
+    from fastapi import HTTPException
+    from sqlalchemy import or_
+    from app.models import Transaction
+
+    # Verify a real transaction relationship exists between the two users
+    relationship = db.query(Transaction).filter(
+        or_(
+            (Transaction.lender_id == a_id) & (Transaction.borrower_id == b_id),
+            (Transaction.lender_id == b_id) & (Transaction.borrower_id == a_id),
+        )
+    ).first()
+
+    if not relationship:
+        raise HTTPException(
+            status_code=404,
+            detail="This user is not in your network. You can only check trust scores with peers you have transacted with."
+        )
+
+    # Both directions
     ts_ab = db.query(TrustScore).filter(
         TrustScore.user_a_id == a_id,
         TrustScore.user_b_id == b_id
     ).first()
 
-    # How b rates a (incoming to a)
     ts_ba = db.query(TrustScore).filter(
         TrustScore.user_a_id == b_id,
         TrustScore.user_b_id == a_id
@@ -25,12 +41,15 @@ def get_pair_trust(a_id: int, b_id: int, db: Session) -> dict:
     if ts_ab: scores.append(float(ts_ab.score))
     if ts_ba: scores.append(float(ts_ba.score))
 
+    # Peers exist but trust hasn't been computed yet (no settled transactions)
     if not scores:
-        return {"score": 50.0, "user_a_id": a_id, "user_b_id": b_id}
+        raise HTTPException(
+            status_code=404,
+            detail="No trust score yet — complete a transaction with this peer first."
+        )
 
     avg = sum(scores) / len(scores)
     return {"score": round(avg, 1), "user_a_id": a_id, "user_b_id": b_id}
-
 
 def get_my_network(user_id: int, db: Session) -> list:
     """
